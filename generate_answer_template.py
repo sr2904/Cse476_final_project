@@ -1,4 +1,4 @@
-from __future__ import annotations
+from _future_ import annotations
 
 import json
 from pathlib import Path
@@ -40,3 +40,15 @@ def run(tests: List[Dict[str, Any]]) -> List[Dict[str, str]]:
         ans = ans.strip().replace("\n", " ")
         outputs.append({"output": ans})
     return outputs
+
+
+def main() -> None:
+    tests = readtest(testfile)
+    outputs = run(tests)
+    with outfile.open("w") as fp:
+        json.dump(outputs, fp, ensure_ascii=False, indent=2)
+    print(f"Wrote {len(outputs)} answers to {outfile}.")
+
+
+if _name_ == "_main_":
+    main()

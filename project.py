@@ -125,3 +125,110 @@ class AnswerAgent:
         )
         return out
 
+    def extract(self, text: str) -> str:
+        if not text:
+            return ""
+        m = re.search(r"FINAL_ANSWER\s*:\s*(.+)", text)
+        if m:
+            ans = m.group(1)
+        else:
+            ans = text
+        ans = ans.strip().replace("\n", " ")
+        ans = re.sub(r"\s+", " ", ans).strip()
+        ans = re.sub(r"^FINAL_ANSWER\s*:\s*", "", ans, flags=re.IGNORECASE)
+        return ans
+
+    def tryanswers(
+        self,
+        domain: str,
+        question: str,
+        samples: int = 2,
+        kshots: int = 2,
+        temperature: float = 0.7,
+    ) -> List[str]:
+        out: List[str] = []
+        maxsamples = max(1, self.limit - 2)
+        n = max(1, min(samples, maxsamples))
+        for _ in range(n):
+            p = self.prompt(domain, question, kshots)
+            r = askmodel(
+                p,
+                system="You are a careful solver. Include reasoning but end with FINAL_ANSWER.",
+                model=self.model,
+                temperature=temperature,
+            )
+            raw = (r.get("text") or "").strip()
+            ans = self.extract(raw)
+            out.append(ans)
+            time.sleep(0.05)
+        return out
+
+    def decide(self, items: List[str]) -> str:
+        arr = [x.strip() for x in items if x and x.strip()]
+        if not arr:
+            return ""
+        count = Counter(arr)
+        return count.most_common(1)[0][0]
+
+    def review(self, domain: str, question: str, draft: str) -> str:
+        if not draft:
+            return draft
+        p = (
+            "You are checking if an answer is correct.\n\n"
+            f"Domain: {domain}\n"
+            f"Question:\n{question}\n\n"
+            f"Answer:\n{draft}\n\n"
+            "If it is correct, reply:\n"
+            "ACCEPT: <same answer>\n\n"
+            "If it is wrong or incomplete, reply:\n"
+            "REVISE: <better answer>"
+        )
+        r = askmodel(
+            p,
+            system="Check the answer and either ACCEPT or REVISE it.",
+            model=self.model,
+            temperature=0.0,
+        )
+        text = (r.get("text") or "").strip()
+        if text.startswith("REVISE:"):
+            result = text[len("REVISE:") :].strip()
+        elif text.startswith("ACCEPT:"):
+            result = text[len("ACCEPT:") :].strip()
+        else:
+            result = draft
+        result = result.replace("\n", " ")
+        result = re.sub(r"\s+", " ", result).strip()
+        return result
+
+    def final(self, question: str, draft: str) -> str:
+        if not draft:
+            return ""
+        p = (
+            "Given a question and a draft answer, return ONLY the final answer.\n"
+            "Do not include any explanation.\n\n"
+            f"Question:\n{question}\n\n"
+            f"Draft answer:\n{draft}\n\n"
+            "Final answer only:"
+        )
+        r = askmodel(
+            p,
+            system="Return only the minimal final answer string.",
+            model=self.model,
+            temperature=0.0,
+        )
+        t = (r.get("text") or "").strip()
+        t = t.replace("\n", " ")
+        t = re.sub(r"\s+", " ", t).strip()
+        t = re.sub(r"^[A-D]\W+", "", t).strip()
+        return t
+
+    def solve(self, item: Dict[str, Any]) -> str:
+        question = item.get("input", "")
+        domain = item.get("domain", "unknown")
+        dom = (domain or "").lower()
+        samples = 3 if "math" in dom else 2
+        tries = self.tryanswers(domain, question, samples=samples, kshots=2)
+        base = self.decide(tries)
+        checked = self.review(domain, question, base)
+        out = self.final(question, checked)
+        return out
