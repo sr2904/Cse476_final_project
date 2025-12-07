@@ -1,0 +1,1 @@
+CSE 476 Final Project implementation of a reasoning-based inference time agent is included in this repository. The reasoning-based agent calls a custom LLM API endpoint to solve thousands of multi-domain questions and outputs only the JSON file containing the final answer to each prompt per project requirement.
